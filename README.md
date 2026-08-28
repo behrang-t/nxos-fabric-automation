@@ -150,7 +150,7 @@ The report describes collection completeness only. It does not translate operati
 ## Project structure
 
 ```text
-11_nxos_fabric_automation_lab/
+.
 ├── README.md
 ├── ansible.cfg
 ├── collection_plan.yml

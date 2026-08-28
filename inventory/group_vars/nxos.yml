@@ -14,4 +14,3 @@ fabric_site: multisite_lab
 evidence_root: evidence_pack
 raw_evidence_dir: raw
 report_evidence_dir: reports
-
