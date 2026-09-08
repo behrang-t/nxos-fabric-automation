@@ -243,4 +243,96 @@ Phase 2 reassessment
 healthy or another approved plan
 ```
 
-Backups, rollback, allowed-command policies and stop conditions are deliberately outside the current read-only workflow.
+Remediation backups, rollback and write-command policies are outside the current
+collection workflow. Collection connection-stop behavior is described below.
+
+## Phase 1 collection hardening
+
+See [the collection contract](docs/phase1-collection-contract.md) for error rules,
+connection handling, role ownership, and lab acceptance cases. The machine output
+contract is [collection_results.schema.json](schemas/collection_results.schema.json).
+Run offline checks with `python3 -m unittest discover -s tests -v` after installing
+the project requirements. These checks do not connect to the lab.
+
+### Responsibilities and data flow
+
+The goal is complete, traceable evidence collection with explicit errors, not a
+network health verdict. Command groups select evidence by role and stage; they
+do not define future parser or assessment boundaries.
+
+| Component | Responsibility |
+| --- | --- |
+| `inventory/inventory.yml` | Defines devices and group-owned `fabric_role`; the playbook checks exclusive role-group membership. |
+| `collection_plan.yml` | Defines role-aware command groups and traffic probes. Pre/post groups run in baseline and again in post-probe. |
+| `playbooks/collect_vxlan_evpn_evidence.yml` | Orchestrates snapshot/baseline, probes, post-probe, raw files and final reports. |
+| `playbooks/tasks/collect_cli_command.yml` | Sends each planned command if preflight passed and appends Python's classified result. |
+| `filter_plugins/collection_results.py` | Owns all CLI result decisions: `execution_status`, `msg`, and `stop_device`, preserving stdout. It does not connect, keep host state, or append records. |
+| `templates/evidence_report.md.j2` | Renders the final structured payload as a human-readable collection report. |
+| `schemas/collection_results.schema.json` | Describes the version-1 JSON interface; full schema validation is not wired into runtime. |
+
+The first NX-OS command is `show hostname` (preflight). Python validates its
+result; YAML stores the returned `stop_device` decision for this run. Only
+preflight decides whether later sends are allowed. The snapshot follows it.
+For baseline and post-probe commands, the main playbook includes the task file
+once per planned command. The task file checks the host flag before sending,
+registers the result, and passes it plus the previous stop state to Python.
+Python returns a classified result. YAML appends it to the stage's results list
+without changing the preflight decision. YAML does not
+interpret `unreachable`, `failed`, or CLI error text. An unavailable host produces
+an unsent/error record for each remaining command instead of silently losing
+evidence coverage. The include still runs to create those records.
+
+The main playbook writes group raw files from these validated results. In the
+final localhost play, it reads registered host results, builds
+`collection_results.json`, then renders the Markdown report from the same
+payload. Each operational record retains category, command, execution status,
+complete stdout, message and raw-file reference. JSON-escaped newlines decode
+back into the original multiline string for future parsers.
+
+### Connection-stop policy
+
+Preflight failure stops sends to that device for the run. After preflight
+success, every subsequent command error is recorded and collection continues.
+
+Preflight uses the existing `network_cli` transport, `show hostname`, and
+`ansible_connect_timeout: 30`. Python applies the same CLI validation used for
+collection. Failure is labelled unreachable by Collector policy; the original
+error is retained. This is not a claim about the underlying failure cause.
+The timeout setting is a connection setting, not a total preflight deadline.
+
+Preflight evidence is saved as `raw/<RUN_ID>/baseline/<device>/preflight.txt`.
+On rejection, snapshot and operational error messages retain the preflight cause;
+every planned command still gets a record. The public JSON schema stays at v1.
+Ansible's `unreachable` flag can classify an error but never triggers a new stop
+after preflight. `ignore_errors` and `ignore_unreachable` allow bookkeeping and
+continuation; the preflight flag alone controls whether a command is sent.
+
+The task include still runs once per planned command to retain all records.
+Probe execution and return-code recording retain their existing behavior.
+
+### Offline verification
+
+| Test | Coverage |
+| --- | --- |
+| `test_stop_decision_and_error_precedence` | All post-preflight errors retain the existing stop state; error flags take precedence over partial stdout. |
+| `test_preflight_gate` | Failed/empty/CLI-error preflight stops sends; original causes survive in unsent records; successful preflight allows subsequent errors without a new stop. |
+| `test_absent_empty_and_transport_results` | Missing/empty output, supplied `failed`, `unreachable` and `skipped` results yield an error and message; empty stdout does not invent an unreachable flag. |
+| `test_cli_errors_and_context` | Invalid/Error/Incomplete/Ambiguous percent-prefixed lines are recognized, output is retained, and normal `Errors: 0` / `25%` text is not rejected. |
+| `test_full_output_round_trip` | A synthetic 200-line output survives validation and JSON serialization/deserialization intact. |
+| `test_inventory_roles_owned_by_groups` | Roles exist on groups and are not repeated on individual NX-OS hosts. |
+| `test_render_actual_payload_with_mixed_results` | The actual payload/report templates handle supplied success/error/unsent records, snapshot failure, counts, output, paths, probe rc/stderr, and expected field names. |
+
+These are regression tests with synthetic inputs, not real network tests. They
+do not execute Ansible's task include, establish SSH sessions, prove that later
+commands are not sent, or prove that ordinary failures allow the next command.
+Failure-flag precedence with nonempty stdout is covered by the decision test. Full JSON Schema
+validation is not exercised; field-name checks are only a partial contract check.
+Live acceptance of this preflight change is pending the next lab startup.
+Do not describe the offline checks as successful device acceptance.
+
+At the start of the parser phase, report our observed `network_cli` failure
+results upstream, referencing ansible.netcommon issue 340. Include installed
+versions and sanitized evidence; no upstream report has been submitted yet.
+
+A future, separately designed Phase 1 refactor will move collection to pyATS and
+Unicon. Session lifecycle and error policy will be explicitly tested there too.

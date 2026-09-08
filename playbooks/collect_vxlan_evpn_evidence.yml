@@ -20,6 +20,17 @@
       {{ hostvars[collection_reference_host].report_evidence_dir | default('reports') }}
 
   tasks:
+    - name: "Validate exclusive role membership before connecting"
+      ansible.builtin.assert:
+        that:
+          - >-
+            hostvars[item].group_names
+            | intersect(['spines', 'leaves', 'border_gateways', 'dci_nodes'])
+            | length == 1
+          - hostvars[item].fabric_role is defined
+        fail_msg: "{{ item }} must belong to exactly one NX-OS role group."
+      loop: "{{ groups['nxos'] | default([]) }}"
+
     - name: "Define run metadata and project paths"
       ansible.builtin.set_fact:
         run_id_effective: "{{ run_id | default(generated_run_id, true) }}"
@@ -59,6 +70,8 @@
         evidence_root_effective: "{{ hostvars['localhost']['evidence_root_effective'] }}"
         raw_evidence_dir_effective: "{{ hostvars['localhost']['raw_evidence_dir_effective'] }}"
         device_baseline_command_sets: {}
+        device_connection_unavailable: false
+        baseline_command_results: {results: []}
         device_baseline_raw_dir: >-
           {{ hostvars['localhost']['project_root_effective'] }}/
           {{- hostvars['localhost']['evidence_root_effective'] }}/
@@ -102,6 +115,37 @@
         mode: "0755"
       delegate_to: localhost
 
+    - name: "Run the device preflight"
+      cisco.nxos.nxos_command:
+        commands:
+          - show hostname
+      vars:
+        ansible_connect_timeout: 30
+      register: preflight_attempt
+      changed_when: false
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: "Ask Python to classify preflight"
+      ansible.builtin.set_fact:
+        preflight_result: "{{ preflight_attempt | collection_cli_result(preflight=true) }}"
+
+    - name: "Store Python's preflight decision"
+      ansible.builtin.set_fact:
+        device_connection_unavailable: "{{ preflight_result.stop_device }}"
+
+    - name: "Write the preflight evidence"
+      ansible.builtin.copy:
+        dest: "{{ device_baseline_raw_dir }}/preflight.txt"
+        mode: "0600"
+        content: |
+          COMMAND: show hostname
+          STATUS: {{ preflight_result.execution_status }}
+          MESSAGE: {{ preflight_result.msg }}
+          OUTPUT:
+          {{ preflight_result.stdout[0] | default('NO OUTPUT RETURNED') }}
+      delegate_to: localhost
+
     - name: "Capture the running configuration for compliance assessment"
       cisco.nxos.nxos_command:
         commands:
@@ -109,6 +153,13 @@
       register: running_config_snapshot_result
       changed_when: false
       ignore_errors: true
+      when: not (device_connection_unavailable | bool)
+
+    - name: "Ask Python to classify the snapshot result"
+      ansible.builtin.set_fact:
+        running_config_snapshot_result: >-
+          {{ running_config_snapshot_result | collection_cli_result(
+             device_connection_unavailable, preflight_message=preflight_result.msg) }}
 
     - name: "Write the running configuration snapshot"
       ansible.builtin.copy:
@@ -117,21 +168,16 @@
         content: "{{ running_config_snapshot_result.stdout[0] }}\n"
       delegate_to: localhost
       when:
-        - not (running_config_snapshot_result.failed | default(false))
-        - not (running_config_snapshot_result.unreachable | default(false))
-        - running_config_snapshot_result.stdout is defined
-        - running_config_snapshot_result.stdout | length > 0
+        - running_config_snapshot_result.execution_status == 'completed'
 
     - name: "Collect each baseline command independently"
-      cisco.nxos.nxos_command:
-        commands:
-          - "{{ item[1] }}"
+      ansible.builtin.include_tasks: tasks/collect_cli_command.yml
       loop: "{{ query('subelements', device_baseline_command_sets | dict2items, 'value') }}"
       loop_control:
-        label: "{{ item[0].key }} | {{ item[1] }}"
-      register: baseline_command_results
-      changed_when: false
-      ignore_errors: true
+        loop_var: planned_command
+        label: "{{ planned_command[0].key }} | {{ planned_command[1] }}"
+      vars:
+        result_variable: baseline_command_results
 
     - name: "Write one baseline evidence file per command group"
       ansible.builtin.copy:
@@ -148,19 +194,19 @@
 
           {% set group_status = namespace(failed=0) %}
           {% for command_result in baseline_command_results.results | default([]) %}
-          {% if command_result.item[0].key == item.key and command_result.failed | default(false) %}
+          {% if command_result.item[0].key == item.key and command_result.execution_status == 'error' %}
           {% set group_status.failed = group_status.failed + 1 %}
           {% endif %}
           {% endfor %}
           Collection result: {{ 'completed-with-errors' if group_status.failed > 0 else 'completed' }}
-          Commands attempted: {{ item.value | length }}
+          Commands planned: {{ item.value | length }}
           Commands failed: {{ group_status.failed }}
 
           {% for command_result in baseline_command_results.results | default([]) %}
           {% if command_result.item[0].key == item.key %}
           ================================================================================
           COMMAND: {{ command_result.item[1] }}
-          STATUS: {{ 'failed' if command_result.failed | default(false) else 'completed' }}
+          STATUS: {{ command_result.execution_status }}
           ================================================================================
 
           {% if command_result.msg is defined and command_result.msg %}
@@ -304,6 +350,7 @@
         evidence_root_effective: "{{ hostvars['localhost']['evidence_root_effective'] }}"
         raw_evidence_dir_effective: "{{ hostvars['localhost']['raw_evidence_dir_effective'] }}"
         device_post_probe_command_sets: {}
+        post_probe_command_results: {results: []}
         device_post_probe_raw_dir: >-
           {{ hostvars['localhost']['project_root_effective'] }}/
           {{- hostvars['localhost']['evidence_root_effective'] }}/
@@ -332,16 +379,13 @@
       when: device_post_probe_command_sets | length > 0
 
     - name: "Collect each post-probe command independently"
-      cisco.nxos.nxos_command:
-        commands:
-          - "{{ item[1] }}"
+      ansible.builtin.include_tasks: tasks/collect_cli_command.yml
       loop: "{{ query('subelements', device_post_probe_command_sets | dict2items, 'value') }}"
       loop_control:
-        label: "{{ item[0].key }} | {{ item[1] }}"
-      register: post_probe_command_results
-      changed_when: false
-      ignore_errors: true
-      when: device_post_probe_command_sets | length > 0
+        loop_var: planned_command
+        label: "{{ planned_command[0].key }} | {{ planned_command[1] }}"
+      vars:
+        result_variable: post_probe_command_results
 
     - name: "Write one post-probe evidence file per comparison group"
       ansible.builtin.copy:
@@ -358,19 +402,19 @@
 
           {% set group_status = namespace(failed=0) %}
           {% for command_result in post_probe_command_results.results | default([]) %}
-          {% if command_result.item[0].key == item.key and command_result.failed | default(false) %}
+          {% if command_result.item[0].key == item.key and command_result.execution_status == 'error' %}
           {% set group_status.failed = group_status.failed + 1 %}
           {% endif %}
           {% endfor %}
           Collection result: {{ 'completed-with-errors' if group_status.failed > 0 else 'completed' }}
-          Commands attempted: {{ item.value | length }}
+          Commands planned: {{ item.value | length }}
           Commands failed: {{ group_status.failed }}
 
           {% for command_result in post_probe_command_results.results | default([]) %}
           {% if command_result.item[0].key == item.key %}
           ================================================================================
           COMMAND: {{ command_result.item[1] }}
-          STATUS: {{ 'failed' if command_result.failed | default(false) else 'completed' }}
+          STATUS: {{ command_result.execution_status }}
           ================================================================================
 
           {% if command_result.msg is defined and command_result.msg %}
@@ -443,7 +487,7 @@
             {%- endfor -%}
             {%- set baseline_registered = hv.baseline_command_results | default({}) -%}
             {%- for result in baseline_registered.results | default([]) -%}
-              {%- set execution_status = 'error' if result.failed | default(false) else 'completed' -%}
+              {%- set execution_status = result.execution_status -%}
               {%- if execution_status == 'completed' -%}
                 {%- set host_counts.completed = host_counts.completed + 1 -%}
               {%- endif -%}
@@ -454,7 +498,7 @@
                 'execution_status': execution_status,
                 'stdout': stdout_value,
                 'message': result.msg | default(''),
-                'raw_file': 'raw/' ~ run_id_effective ~ '/baseline/' ~ host ~ '/' ~ result.item[0].key ~ '.txt'
+                'raw_file': raw_evidence_dir_effective ~ '/' ~ run_id_effective ~ '/baseline/' ~ host ~ '/' ~ result.item[0].key ~ '.txt'
               }) -%}
             {%- endfor -%}
             {%- set counts.baseline_planned = counts.baseline_planned + host_counts.planned -%}
@@ -472,16 +516,7 @@
           {%- for host in collected_nxos_hosts -%}
             {%- set hv = hostvars[host] -%}
             {%- set snapshot_registered = hv.running_config_snapshot_result | default({}) -%}
-            {%- set snapshot_failed = snapshot_registered.failed | default(false) -%}
-            {%- set snapshot_unreachable = snapshot_registered.unreachable | default(false) -%}
-            {%- set snapshot_stdout = snapshot_registered.stdout[0]
-              if snapshot_registered.stdout is defined and
-                 snapshot_registered.stdout | length > 0
-              else '' -%}
-            {%- set snapshot_collected =
-              not snapshot_failed and
-              not snapshot_unreachable and
-              snapshot_stdout | length > 0 -%}
+            {%- set snapshot_collected = snapshot_registered.execution_status | default('error') == 'completed' -%}
             {%- if snapshot_collected -%}
               {%- set counts.snapshots_completed = counts.snapshots_completed + 1 -%}
             {%- endif -%}
@@ -492,7 +527,7 @@
               'command': 'show running-config',
               'message': snapshot_registered.msg | default(''),
               'raw_file': (
-                'raw/' ~ run_id_effective ~ '/configuration_snapshots/' ~
+                raw_evidence_dir_effective ~ '/' ~ run_id_effective ~ '/configuration_snapshots/' ~
                 host ~ '/running_config.cfg'
               ) if snapshot_collected else none
             }}) -%}
@@ -531,7 +566,7 @@
                 'stdout': match.result.stdout | default(''),
                 'stderr': match.result.stderr | default(''),
                 'message': '',
-                'raw_file': 'raw/' ~ run_id_effective ~ '/traffic_probes/' ~ probe.id ~ '.txt'
+                'raw_file': raw_evidence_dir_effective ~ '/' ~ run_id_effective ~ '/traffic_probes/' ~ probe.id ~ '.txt'
               }) -%}
             {%- else -%}
               {%- set _ = probe_records.append({
@@ -563,7 +598,7 @@
             {%- endfor -%}
             {%- set post_registered = hv.post_probe_command_results | default({}) -%}
             {%- for result in post_registered.results | default([]) -%}
-              {%- set execution_status = 'error' if result.failed | default(false) else 'completed' -%}
+              {%- set execution_status = result.execution_status -%}
               {%- if execution_status == 'completed' -%}
                 {%- set host_counts.completed = host_counts.completed + 1 -%}
               {%- endif -%}
@@ -574,7 +609,7 @@
                 'execution_status': execution_status,
                 'stdout': stdout_value,
                 'message': result.msg | default(''),
-                'raw_file': 'raw/' ~ run_id_effective ~ '/post_probe/' ~ host ~ '/' ~ result.item[0].key ~ '.txt'
+                'raw_file': raw_evidence_dir_effective ~ '/' ~ run_id_effective ~ '/post_probe/' ~ host ~ '/' ~ result.item[0].key ~ '.txt'
               }) -%}
             {%- endfor -%}
             {%- set counts.post_planned = counts.post_planned + host_counts.planned -%}
@@ -644,9 +679,9 @@
             'traffic_probes': probe_records,
             'post_probe': {'devices': post_devices},
             'artifacts': {
-              'raw_root': 'raw/' ~ run_id_effective,
-              'structured_results': 'structured/' ~ run_id_effective ~ '/collection_results.json',
-              'report': 'reports/' ~ run_id_effective ~ '/evidence_report.md'
+              'raw_root': raw_evidence_dir_effective ~ '/' ~ run_id_effective,
+              'structured_results': structured_evidence_dir_effective ~ '/' ~ run_id_effective ~ '/collection_results.json',
+              'report': report_dir_effective ~ '/' ~ run_id_effective ~ '/evidence_report.md'
             }
           } | to_json }}
 

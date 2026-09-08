@@ -44,7 +44,7 @@ DCI, and pre-traffic learning evidence selected according to device role.
 | Device | Role | Management IP | Commands | Result | Raw path |
 |---|---|---|---:|---|---|
 {% for device, result in collection_results_payload.baseline.devices.items() %}
-| `{{ device }}` | {{ result.role }} | `{{ result.management_ip }}` | {{ result.completed_commands }}/{{ result.planned_commands }} | {{ result.collection_status }} | `raw/{{ collection_results_payload.run.run_id }}/baseline/{{ device }}/` |
+| `{{ device }}` | {{ result.role }} | `{{ result.management_ip }}` | {{ result.completed_commands }}/{{ result.planned_commands }} | {{ result.collection_status }} | `{{ collection_results_payload.artifacts.raw_root }}/baseline/{{ device }}/` |
 {% endfor %}
 
 ---
@@ -90,15 +90,15 @@ and make direct file comparison possible.
 | Device | Role | Management IP | Commands | Result | Raw path |
 |---|---|---|---:|---|---|
 {% for device, result in collection_results_payload.post_probe.devices.items() %}
-| `{{ device }}` | {{ result.role }} | `{{ result.management_ip }}` | {{ result.completed_commands }}/{{ result.planned_commands }} | {{ result.collection_status }} | `raw/{{ collection_results_payload.run.run_id }}/post_probe/{{ device }}/` |
+| `{{ device }}` | {{ result.role }} | `{{ result.management_ip }}` | {{ result.completed_commands }}/{{ result.planned_commands }} | {{ result.collection_status }} | `{{ collection_results_payload.artifacts.raw_root }}/post_probe/{{ device }}/` |
 {% endfor %}
 
 Example comparison:
 
 ```bash
 diff -u \
-  evidence_pack/raw/{{ collection_results_payload.run.run_id }}/baseline/leaf1/tenant_learning.txt \
-  evidence_pack/raw/{{ collection_results_payload.run.run_id }}/post_probe/leaf1/tenant_learning.txt
+  evidence_pack/{{ collection_results_payload.artifacts.raw_root }}/baseline/leaf1/tenant_learning.txt \
+  evidence_pack/{{ collection_results_payload.artifacts.raw_root }}/post_probe/leaf1/tenant_learning.txt
 ```
 
 ---
@@ -150,3 +150,21 @@ attempted, what was captured, and where the artifacts were written. It does not
 determine whether OSPF, BGP EVPN, NVE/VNI state, endpoint learning, or end-to-end
 reachability are correct. Deterministic parsing and expected-state comparison
 belong to the subsequent assessment phase.
+
+## Collection error details
+
+{% for stage in ['baseline', 'post_probe'] %}
+{% for device, result in collection_results_payload[stage].devices.items() %}
+{% for command in result.commands if command.execution_status == 'error' %}
+- **{{ stage }} / {{ device }}** — `{{ command.command }}`
+
+  {{ command.message | replace('\n', ' ') }}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% for device, result in collection_results_payload.configuration_snapshots.devices.items() if result.collection_status == 'error' %}
+- **Configuration / {{ device }}**: {{ result.message | replace('\n', ' ') }}
+{% endfor %}
+{% for probe in collection_results_payload.traffic_probes if probe.execution_status == 'error' %}
+- **Probe / {{ probe.probe_id }}**: {{ probe.message | replace('\n', ' ') }}
+{% endfor %}

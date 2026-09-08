@@ -1,0 +1,22 @@
+---
+- name: "Send the planned command if preflight passed"
+  cisco.nxos.nxos_command:
+    commands:
+      - "{{ planned_command[1] }}"
+  register: command_attempt
+  changed_when: false
+  ignore_errors: true
+  ignore_unreachable: true
+  when: not (device_connection_unavailable | default(false) | bool)
+
+- name: "Ask Python to classify the command result"
+  ansible.builtin.set_fact:
+    command_decision: >-
+      {{ command_attempt | combine({'item': planned_command})
+         | collection_cli_result(device_connection_unavailable | default(false) | bool,
+             preflight_message=(preflight_result | default({})).msg | default('')) }}
+
+- name: "Keep a validated record for every planned command, including unsent commands"
+  ansible.builtin.set_fact:
+    "{{ result_variable }}": >-
+      {{ {'results': vars[result_variable].results + [command_decision]} }}

@@ -1,0 +1,444 @@
+{
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run",
+    "fabric",
+    "summary",
+    "baseline",
+    "configuration_snapshots",
+    "traffic_probes",
+    "post_probe",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "run_id",
+        "started_at",
+        "completed_at",
+        "collection_status",
+        "collection_plan"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "completed_at": {
+          "type": "string"
+        },
+        "collection_status": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "collection_plan": {
+          "type": "object",
+          "required": [
+            "file",
+            "schema_version"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "schema_version": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "fabric": {
+      "type": "object",
+      "required": [
+        "name",
+        "site"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "site": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "baseline",
+        "configuration_snapshots",
+        "traffic_probes",
+        "post_probe"
+      ],
+      "properties": {
+        "baseline": {
+          "type": "object",
+          "required": [
+            "planned",
+            "completed",
+            "errors"
+          ],
+          "properties": {
+            "planned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "errors": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "configuration_snapshots": {
+          "type": "object",
+          "required": [
+            "planned",
+            "collected",
+            "errors"
+          ],
+          "properties": {
+            "planned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "collected": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "errors": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "traffic_probes": {
+          "type": "object",
+          "required": [
+            "planned",
+            "executed",
+            "execution_errors"
+          ],
+          "properties": {
+            "planned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "executed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "execution_errors": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "post_probe": {
+          "type": "object",
+          "required": [
+            "planned",
+            "completed",
+            "errors"
+          ],
+          "properties": {
+            "planned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "errors": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "baseline": {
+      "type": "object",
+      "required": [
+        "devices"
+      ],
+      "properties": {
+        "devices": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/device"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "configuration_snapshots": {
+      "type": "object",
+      "required": [
+        "devices"
+      ],
+      "properties": {
+        "devices": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/snapshot"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "traffic_probes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/probe"
+      }
+    },
+    "post_probe": {
+      "type": "object",
+      "required": [
+        "devices"
+      ],
+      "properties": {
+        "devices": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/device"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "required": [
+        "raw_root",
+        "structured_results",
+        "report"
+      ],
+      "properties": {
+        "raw_root": {
+          "type": "string"
+        },
+        "structured_results": {
+          "type": "string"
+        },
+        "report": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NX-OS collection results v1",
+  "$defs": {
+    "command": {
+      "type": "object",
+      "required": [
+        "category",
+        "command",
+        "execution_status",
+        "stdout",
+        "message",
+        "raw_file"
+      ],
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "execution_status": {
+          "enum": [
+            "completed",
+            "error"
+          ]
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "raw_file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "device": {
+      "type": "object",
+      "required": [
+        "role",
+        "management_ip",
+        "collection_status",
+        "planned_commands",
+        "completed_commands",
+        "commands"
+      ],
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "management_ip": {
+          "type": "string"
+        },
+        "collection_status": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "planned_commands": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_commands": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/command"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "required": [
+        "role",
+        "management_ip",
+        "collection_status",
+        "command",
+        "message",
+        "raw_file"
+      ],
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "management_ip": {
+          "type": "string"
+        },
+        "collection_status": {
+          "enum": [
+            "collected",
+            "error"
+          ]
+        },
+        "command": {
+          "const": "show running-config"
+        },
+        "message": {
+          "type": "string"
+        },
+        "raw_file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "probe": {
+      "type": "object",
+      "required": [
+        "probe_id",
+        "category",
+        "source",
+        "source_interface",
+        "destination",
+        "command",
+        "execution_status",
+        "return_code",
+        "stdout",
+        "stderr",
+        "message",
+        "raw_file"
+      ],
+      "properties": {
+        "probe_id": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "source_interface": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "execution_status": {
+          "enum": [
+            "completed",
+            "error"
+          ]
+        },
+        "return_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "raw_file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
