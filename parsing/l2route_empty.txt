@@ -1,0 +1,11 @@
+Flags -(Rmac):Router MAC (Stt):Static (L):Local (R):Remote
+(Dup):Duplicate (Spl):Split (Rcv):Recv(D):Del Pending (S):Stale (C):Clear
+(Ps):Peer Sync (Ro):Re-Originated (Orp):Orphan (Asy):Asymmetric (Gw):Gateway
+(Bh):Blackhole
+(Piporp): Directly connected Orphan to PIP based vPC BGW
+(Pipporp): Orphan connected to peer of PIP based vPC BGW
+
+NH Flags- (Asy): Asymmetric VNI
+
+Topology    Mac Address    Host IP                                 Prod   Flags              Seq No     Next-Hops
+----------- -------------- --------------------------------------- ------ ----------------- ---------- ---------------------------------------------------------

@@ -71,6 +71,8 @@ baseline_only_command_sets:
     roles:
       - border_gateway
     commands:
+      - show nve multisite dci-links
+      - show nve multisite fabric-links
       - show running-config | include evpn
       - show running-config | include fabric-tracking
       - show running-config | include dci-tracking
