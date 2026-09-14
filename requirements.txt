@@ -10,3 +10,7 @@ paramiko
 ansible-pylibssh
 ncclient
 xmltodict
+genie==26.8
+pyats==26.8
+genie.libs.parser @ git+https://github.com/behrang-t/genieparser.git@9957e9e3665333277f94a30390d6029d3989b90e
+jsonschema>=4.18,<5

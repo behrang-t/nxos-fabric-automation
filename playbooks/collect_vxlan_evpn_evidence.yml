@@ -700,3 +700,18 @@
         src: "{{ project_root_effective }}/templates/evidence_report.md.j2"
         dest: "{{ report_output_dir }}/evidence_report.md"
         mode: "0644"
+
+    - name: "Parse the completed collection evidence offline"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ project_root_effective }}/scripts/parse_evidence.py"
+          - --input
+          - "{{ structured_output_dir }}/collection_results.json"
+      register: parsed_evidence_run
+      changed_when: parsed_evidence_run.rc in [0, 2]
+      failed_when: parsed_evidence_run.rc not in [0, 2]
+
+    - name: "Show parsing coverage and artifact location"
+      ansible.builtin.debug:
+        msg: "{{ parsed_evidence_run.stdout | from_json }}"

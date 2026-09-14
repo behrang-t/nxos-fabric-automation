@@ -336,3 +336,22 @@ versions and sanitized evidence; no upstream report has been submitted yet.
 
 A future, separately designed Phase 1 refactor will move collection to pyATS and
 Unicon. Session lifecycle and error policy will be explicitly tested there too.
+
+# Phase 2: parsed evidence
+
+Install `requirements.txt` in the environment used to run Ansible. The Collector
+now produces `parsed_evidence.json` after writing the collection artifacts and
+prints parsing counts. It uses Genie/pyATS 26.8 and the pinned fork parser commit.
+Collection errors are preserved; parsing errors do not stop later records.
+
+To parse an existing run independently:
+
+```bash
+python scripts/parse_evidence.py --input evidence_pack/structured/RUN_ID/collection_results.json
+```
+
+Exit code 0 means complete parsing, 2 means partial parsing with a written
+artifact, and 1 means the run could not be completed. These are processing
+statuses, not network PASS/FAIL results. Configuration assessment is deferred.
+See [the parsing contract](docs/phase2-parsing-contract.md) for file ownership,
+command aliases, empty-output rules, provenance, and testing.
